@@ -1,0 +1,933 @@
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Game state
+let gameState = 'menu'; // 'menu', 'playing', 'paused', 'gameOver', 'won', 'levelSelect'
+let currentLevel = 1;
+let maxLevel = 3;
+let lives = 3;
+let score = 0;
+let coins = 0;
+let powerUpActive = false;
+let powerUpTimer = 0;
+let wallJumpAvailable = false;
+let onWall = false;
+let wallSide = 0; // -1 for left, 1 for right
+let levelCompleted = false;
+let levelTransitionTimer = 0;
+
+// Particle system
+let particles = [];
+
+// Player properties
+let player = {
+    x: 50,
+    y: 500,
+    width: 50,
+    height: 50,
+    color: '#4A90E2',
+    velocityX: 0,
+    velocityY: 0,
+    jumping: false,
+    speed: 6,
+    jumpStrength: 25, // Increased from 22 to 35 for higher jump
+    gravity: 1.2,
+    invincible: false,
+    invincibleTimer: 0,
+    dashAvailable: true,
+    dashCooldown: 0,
+    wallSliding: false
+};
+
+// Camera and world properties
+let camera = { x: 0, y: 0 };
+let worldWidth = 4000;
+let worldHeight = 600;
+
+// Level data
+let levels = [
+    {
+        platforms: [
+            { x: 0, y: 550, width: 4000, height: 50, color: '#8B4513' },
+            { x: 200, y: 400, width: 200, height: 20, color: '#A0522D' },
+            { x: 500, y: 300, width: 150, height: 20, color: '#A0522D' },
+            { x: 800, y: 450, width: 200, height: 20, color: '#A0522D' },
+            { x: 1100, y: 350, width: 150, height: 20, color: '#A0522D' },
+            { x: 1400, y: 250, width: 200, height: 20, color: '#A0522D' },
+            { x: 1700, y: 400, width: 250, height: 20, color: '#A0522D' },
+            { x: 2100, y: 300, width: 150, height: 20, color: '#A0522D' },
+            { x: 2500, y: 450, width: 200, height: 20, color: '#A0522D' },
+            { x: 2800, y: 200, width: 300, height: 20, color: '#A0522D' },
+            { x: 3200, y: 350, width: 200, height: 20, color: '#A0522D' },
+            { x: 3600, y: 250, width: 200, height: 20, color: '#A0522D' }
+        ],
+        coins: [
+            { x: 250, y: 350, width: 20, height: 20, collected: false, value: 50 },
+            { x: 550, y: 250, width: 20, height: 20, collected: false, value: 50 },
+            { x: 850, y: 400, width: 20, height: 20, collected: false, value: 50 },
+            { x: 1150, y: 300, width: 20, height: 20, collected: false, value: 50 },
+            { x: 1450, y: 200, width: 20, height: 20, collected: false, value: 50 },
+            { x: 1750, y: 350, width: 20, height: 20, collected: false, value: 50 },
+            { x: 2150, y: 250, width: 20, height: 20, collected: false, value: 50 },
+            { x: 2550, y: 400, width: 20, height: 20, collected: false, value: 50 },
+            { x: 2850, y: 150, width: 20, height: 20, collected: false, value: 50 },
+            { x: 3250, y: 300, width: 20, height: 20, collected: false, value: 50 },
+            { x: 3650, y: 200, width: 20, height: 20, collected: false, value: 50 }
+        ],
+        powerUps: [
+            { x: 1200, y: 180, width: 30, height: 30, type: 'doubleJump', collected: false },
+            { x: 2400, y: 380, width: 30, height: 30, type: 'speedBoost', collected: false }
+        ],
+        enemies: [
+            // Ground enemies
+            { x: 300, y: 360, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 200, platformEnd: 400, health: 1 },
+            { x: 600, y: 260, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 500, platformEnd: 650, health: 1 },
+            { x: 1200, y: 210, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 1100, platformEnd: 1250, health: 1 },
+            { x: 1800, y: 350, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 1700, platformEnd: 1950, health: 1 },
+            { x: 2400, y: 410, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 2300, platformEnd: 2500, health: 1 },
+            { x: 3000, y: 160, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 2800, platformEnd: 3100, health: 1 },
+            { x: 3400, y: 310, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 3200, platformEnd: 3400, health: 1 },
+
+            // Additional ground enemies
+            { x: 800, y: 410, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 800, platformEnd: 1000, health: 1 },
+            { x: 1100, y: 310, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 1100, platformEnd: 1250, health: 1 },
+            { x: 1400, y: 210, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 1400, platformEnd: 1600, health: 1 },
+            { x: 2100, y: 260, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 2100, platformEnd: 2250, health: 1 },
+            { x: 2500, y: 410, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 2500, platformEnd: 2700, health: 1 },
+            { x: 3200, y: 310, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 3200, platformEnd: 3400, health: 1 },
+            { x: 3600, y: 210, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 3600, platformEnd: 3800, health: 1 },
+
+            // Flying enemies
+            { x: 400, y: 200, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 1, alive: true, type: 'flying', startY: 150, endY: 300, health: 1 },
+            { x: 900, y: 150, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -1, alive: true, type: 'flying', startY: 100, endY: 250, health: 1 },
+            { x: 1500, y: 100, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 1, alive: true, type: 'flying', startY: 80, endY: 200, health: 1 },
+            { x: 2200, y: 200, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -1, alive: true, type: 'flying', startY: 150, endY: 280, health: 1 },
+            { x: 2900, y: 80, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 1, alive: true, type: 'flying', startY: 60, endY: 180, health: 1 },
+            { x: 3300, y: 150, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -1, alive: true, type: 'flying', startY: 120, endY: 220, health: 1 },
+            { x: 3700, y: 120, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 1, alive: true, type: 'flying', startY: 100, endY: 180, health: 1 }
+        ],
+        goal: { x: 3900, y: 500, width: 50, height: 50, color: '#FFD700' }
+    },
+    // Level 2 - Different layout
+    {
+        platforms: [
+            { x: 0, y: 550, width: 4000, height: 50, color: '#8B4513' },
+            { x: 150, y: 450, width: 150, height: 20, color: '#A0522D' },
+            { x: 400, y: 350, width: 200, height: 20, color: '#A0522D' },
+            { x: 700, y: 250, width: 180, height: 20, color: '#A0522D' },
+            { x: 1000, y: 400, width: 120, height: 20, color: '#A0522D' },
+            { x: 1300, y: 300, width: 250, height: 20, color: '#A0522D' },
+            { x: 1600, y: 200, width: 150, height: 20, color: '#A0522D' },
+            { x: 1900, y: 350, width: 200, height: 20, color: '#A0522D' },
+            { x: 2200, y: 450, width: 180, height: 20, color: '#A0522D' },
+            { x: 2500, y: 150, width: 200, height: 20, color: '#A0522D' },
+            { x: 2800, y: 300, width: 150, height: 20, color: '#A0522D' },
+            { x: 3100, y: 400, width: 200, height: 20, color: '#A0522D' },
+            { x: 3400, y: 250, width: 180, height: 20, color: '#A0522D' },
+            { x: 3700, y: 350, width: 200, height: 20, color: '#A0522D' }
+        ],
+        coins: [
+            { x: 200, y: 400, width: 20, height: 20, collected: false, value: 50 },
+            { x: 450, y: 300, width: 20, height: 20, collected: false, value: 50 },
+            { x: 750, y: 200, width: 20, height: 20, collected: false, value: 50 },
+            { x: 1050, y: 350, width: 20, height: 20, collected: false, value: 50 },
+            { x: 1350, y: 250, width: 20, height: 20, collected: false, value: 50 },
+            { x: 1650, y: 150, width: 20, height: 20, collected: false, value: 50 },
+            { x: 1950, y: 300, width: 20, height: 20, collected: false, value: 50 },
+            { x: 2250, y: 400, width: 20, height: 20, collected: false, value: 50 },
+            { x: 2550, y: 100, width: 20, height: 20, collected: false, value: 50 },
+            { x: 2850, y: 250, width: 20, height: 20, collected: false, value: 50 },
+            { x: 3150, y: 350, width: 20, height: 20, collected: false, value: 50 },
+            { x: 3450, y: 200, width: 20, height: 20, collected: false, value: 50 },
+            { x: 3750, y: 300, width: 20, height: 20, collected: false, value: 50 }
+        ],
+        powerUps: [
+            { x: 800, y: 200, width: 30, height: 30, type: 'doubleJump', collected: false },
+            { x: 2000, y: 300, width: 30, height: 30, type: 'speedBoost', collected: false },
+            { x: 3200, y: 200, width: 30, height: 30, type: 'doubleJump', collected: false }
+        ],
+        enemies: [
+            // Ground enemies for level 2
+            { x: 200, y: 410, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 150, platformEnd: 300, health: 1 },
+            { x: 450, y: 310, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 400, platformEnd: 600, health: 1 },
+            { x: 750, y: 210, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 700, platformEnd: 880, health: 1 },
+            { x: 1050, y: 360, width: 40, height: 40, color: '#FF4444', velocityX: -1, velocityY: 0, alive: true, type: 'ground', platformStart: 1000, platformEnd: 1120, health: 1 },
+            { x: 1350, y: 260, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 1300, platformEnd: 1550, health: 1 },
+            { x: 1650, y: 160, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 1600, platformEnd: 1750, health: 1 },
+            { x: 1950, y: 310, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 1900, platformEnd: 2100, health: 1 },
+            { x: 2250, y: 410, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 2200, platformEnd: 2380, health: 1 },
+            { x: 2550, y: 110, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 2500, platformEnd: 2700, health: 1 },
+            { x: 2850, y: 210, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 2800, platformEnd: 2950, health: 1 },
+            { x: 3150, y: 360, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 3100, platformEnd: 3300, health: 1 },
+            { x: 3450, y: 160, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 3400, platformEnd: 3580, health: 1 },
+            { x: 3750, y: 310, width: 40, height: 40, color: '#FF4444', velocityX: 2, velocityY: 0, alive: true, type: 'ground', platformStart: 3700, platformEnd: 3900, health: 1 },
+
+            // Flying enemies for level 2
+            { x: 300, y: 180, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 1, alive: true, type: 'flying', startY: 120, endY: 250, health: 1 },
+            { x: 600, y: 120, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -1, alive: true, type: 'flying', startY: 80, endY: 180, health: 1 },
+            { x: 1200, y: 150, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 1, alive: true, type: 'flying', startY: 100, endY: 220, health: 1 },
+            { x: 1800, y: 100, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -1, alive: true, type: 'flying', startY: 60, endY: 160, health: 1 },
+            { x: 2400, y: 200, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 1, alive: true, type: 'flying', startY: 150, endY: 280, health: 1 },
+            { x: 3000, y: 150, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -1, alive: true, type: 'flying', startY: 100, endY: 200, health: 1 },
+            { x: 3600, y: 180, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 1, alive: true, type: 'flying', startY: 120, endY: 240, health: 1 }
+        ],
+        goal: { x: 3900, y: 500, width: 50, height: 50, color: '#FFD700' }
+    },
+    // Level 3 - Final level
+    {
+        platforms: [
+            { x: 0, y: 550, width: 4000, height: 50, color: '#8B4513' },
+            { x: 100, y: 400, width: 100, height: 20, color: '#A0522D' },
+            { x: 300, y: 300, width: 150, height: 20, color: '#A0522D' },
+            { x: 550, y: 200, width: 120, height: 20, color: '#A0522D' },
+            { x: 800, y: 350, width: 200, height: 20, color: '#A0522D' },
+            { x: 1100, y: 250, width: 150, height: 20, color: '#A0522D' },
+            { x: 1400, y: 150, width: 100, height: 20, color: '#A0522D' },
+            { x: 1600, y: 300, width: 180, height: 20, color: '#A0522D' },
+            { x: 1900, y: 200, width: 150, height: 20, color: '#A0522D' },
+            { x: 2200, y: 350, width: 200, height: 20, color: '#A0522D' },
+            { x: 2500, y: 250, width: 150, height: 20, color: '#A0522D' },
+            { x: 2800, y: 150, width: 120, height: 20, color: '#A0522D' },
+            { x: 3100, y: 300, width: 200, height: 20, color: '#A0522D' },
+            { x: 3400, y: 200, width: 150, height: 20, color: '#A0522D' },
+            { x: 3700, y: 350, width: 200, height: 20, color: '#A0522D' }
+        ],
+        coins: [
+            { x: 150, y: 350, width: 20, height: 20, collected: false, value: 100 },
+            { x: 350, y: 250, width: 20, height: 20, collected: false, value: 100 },
+            { x: 600, y: 150, width: 20, height: 20, collected: false, value: 100 },
+            { x: 850, y: 300, width: 20, height: 20, collected: false, value: 100 },
+            { x: 1150, y: 200, width: 20, height: 20, collected: false, value: 100 },
+            { x: 1450, y: 100, width: 20, height: 20, collected: false, value: 100 },
+            { x: 1650, y: 250, width: 20, height: 20, collected: false, value: 100 },
+            { x: 1950, y: 150, width: 20, height: 20, collected: false, value: 100 },
+            { x: 2250, y: 300, width: 20, height: 20, collected: false, value: 100 },
+            { x: 2550, y: 200, width: 20, height: 20, collected: false, value: 100 },
+            { x: 2850, y: 100, width: 20, height: 20, collected: false, value: 100 },
+            { x: 3150, y: 250, width: 20, height: 20, collected: false, value: 100 },
+            { x: 3450, y: 150, width: 20, height: 20, collected: false, value: 100 },
+            { x: 3750, y: 300, width: 20, height: 20, collected: false, value: 100 }
+        ],
+        powerUps: [
+            { x: 600, y: 150, width: 30, height: 30, type: 'doubleJump', collected: false },
+            { x: 1400, y: 100, width: 30, height: 30, type: 'speedBoost', collected: false },
+            { x: 2200, y: 300, width: 30, height: 30, type: 'doubleJump', collected: false },
+            { x: 3100, y: 250, width: 30, height: 30, type: 'speedBoost', collected: false }
+        ],
+        enemies: [
+            // Ground enemies for level 3 (more challenging)
+            { x: 150, y: 360, width: 40, height: 40, color: '#FF4444', velocityX: 3, velocityY: 0, alive: true, type: 'ground', platformStart: 100, platformEnd: 200, health: 1 },
+            { x: 350, y: 260, width: 40, height: 40, color: '#FF4444', velocityX: -3, velocityY: 0, alive: true, type: 'ground', platformStart: 300, platformEnd: 450, health: 1 },
+            { x: 600, y: 160, width: 40, height: 40, color: '#FF4444', velocityX: 3, velocityY: 0, alive: true, type: 'ground', platformStart: 550, platformEnd: 670, health: 1 },
+            { x: 850, y: 310, width: 40, height: 40, color: '#FF4444', velocityX: -2, velocityY: 0, alive: true, type: 'ground', platformStart: 800, platformEnd: 1000, health: 1 },
+            { x: 1150, y: 210, width: 40, height: 40, color: '#FF4444', velocityX: 3, velocityY: 0, alive: true, type: 'ground', platformStart: 1100, platformEnd: 1250, health: 1 },
+            { x: 1450, y: 110, width: 40, height: 40, color: '#FF4444', velocityX: -3, velocityY: 0, alive: true, type: 'ground', platformStart: 1400, platformEnd: 1500, health: 1 },
+            { x: 1650, y: 260, width: 40, height: 40, color: '#FF4444', velocityX: 3, velocityY: 0, alive: true, type: 'ground', platformStart: 1600, platformEnd: 1780, health: 1 },
+            { x: 1950, y: 160, width: 40, height: 40, color: '#FF4444', velocityX: -3, velocityY: 0, alive: true, type: 'ground', platformStart: 1900, platformEnd: 2050, health: 1 },
+            { x: 2250, y: 310, width: 40, height: 40, color: '#FF4444', velocityX: 3, velocityY: 0, alive: true, type: 'ground', platformStart: 2200, platformEnd: 2350, health: 1 },
+            { x: 2550, y: 210, width: 40, height: 40, color: '#FF4444', velocityX: -3, velocityY: 0, alive: true, type: 'ground', platformStart: 2500, platformEnd: 2650, health: 1 },
+            { x: 2850, y: 110, width: 40, height: 40, color: '#FF4444', velocityX: 3, velocityY: 0, alive: true, type: 'ground', platformStart: 2800, platformEnd: 2920, health: 1 },
+            { x: 3150, y: 260, width: 40, height: 40, color: '#FF4444', velocityX: -3, velocityY: 0, alive: true, type: 'ground', platformStart: 3100, platformEnd: 3300, health: 1 },
+            { x: 3450, y: 160, width: 40, height: 40, color: '#FF4444', velocityX: 3, velocityY: 0, alive: true, type: 'ground', platformStart: 3400, platformEnd: 3550, health: 1 },
+            { x: 3750, y: 310, width: 40, height: 40, color: '#FF4444', velocityX: -3, velocityY: 0, alive: true, type: 'ground', platformStart: 3700, platformEnd: 3900, health: 1 },
+
+            // Flying enemies for level 3 (more aggressive)
+            { x: 200, y: 150, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 2, alive: true, type: 'flying', startY: 100, endY: 200, health: 1 },
+            { x: 500, y: 100, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -2, alive: true, type: 'flying', startY: 60, endY: 150, health: 1 },
+            { x: 900, y: 120, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 2, alive: true, type: 'flying', startY: 80, endY: 180, health: 1 },
+            { x: 1300, y: 80, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -2, alive: true, type: 'flying', startY: 40, endY: 120, health: 1 },
+            { x: 1700, y: 150, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 2, alive: true, type: 'flying', startY: 100, endY: 200, health: 1 },
+            { x: 2100, y: 100, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -2, alive: true, type: 'flying', startY: 60, endY: 150, health: 1 },
+            { x: 2500, y: 120, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 2, alive: true, type: 'flying', startY: 80, endY: 180, health: 1 },
+            { x: 2900, y: 80, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -2, alive: true, type: 'flying', startY: 40, endY: 120, health: 1 },
+            { x: 3300, y: 150, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: 2, alive: true, type: 'flying', startY: 100, endY: 200, health: 1 },
+            { x: 3700, y: 100, width: 35, height: 35, color: '#9B59B6', velocityX: 0, velocityY: -2, alive: true, type: 'flying', startY: 60, endY: 150, health: 1 }
+        ],
+        goal: { x: 3900, y: 500, width: 50, height: 50, color: '#FFD700' }
+    }
+];
+
+// Current level data
+let platforms = levels[currentLevel - 1].platforms;
+let coinsArray = levels[currentLevel - 1].coins;
+let powerUps = levels[currentLevel - 1].powerUps;
+let enemies = levels[currentLevel - 1].enemies;
+let goal = levels[currentLevel - 1].goal;
+
+// Keyboard controls
+let keys = {};
+let keyPressed = {}; // Track when keys are first pressed
+
+window.addEventListener('keydown', (e) => {
+    if (!keys[e.key]) {
+        keyPressed[e.key] = true; // Mark as newly pressed
+    }
+    keys[e.key] = true;
+    if (e.key === 'p' || e.key === 'P') {
+        if (gameState === 'playing') gameState = 'paused';
+        else if (gameState === 'paused') gameState = 'playing';
+    }
+    if (e.key === 'r' || e.key === 'R') {
+        resetGame();
+    }
+    if (e.key === 'Enter' && gameState === 'menu') {
+        gameState = 'playing';
+    }
+    if (e.key === 'Escape') {
+        if (gameState === 'playing') gameState = 'paused';
+        else if (gameState === 'paused') gameState = 'playing';
+        else if (gameState === 'menu') gameState = 'menu';
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    keys[e.key] = false;
+    keyPressed[e.key] = false; // Reset pressed state
+});
+
+// Particle system
+function createParticle(x, y, color, type = 'explosion') {
+    for (let i = 0; i < 8; i++) {
+        particles.push({
+            x: x,
+            y: y,
+            vx: (Math.random() - 0.5) * 8,
+            vy: (Math.random() - 0.5) * 8,
+            life: 60,
+            maxLife: 60,
+            color: color,
+            size: Math.random() * 4 + 2,
+            type: type
+        });
+    }
+}
+
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.2; // gravity
+        p.life--;
+
+        if (p.life <= 0) {
+            particles.splice(i, 1);
+        }
+    }
+}
+
+function drawParticles() {
+    particles.forEach(p => {
+        ctx.globalAlpha = p.life / p.maxLife;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - camera.x, p.y, p.size, p.size);
+    });
+    ctx.globalAlpha = 1;
+}
+
+function resetGame() {
+    lives = 3;
+    score = 0;
+    coins = 0;
+    gameState = 'playing';
+    powerUpActive = false;
+    powerUpTimer = 0;
+    wallJumpAvailable = false;
+    onWall = false;
+    particles = [];
+
+    // Reset player
+    player.x = 50;
+    player.y = 500;
+    player.velocityX = 0;
+    player.velocityY = 0;
+    player.invincible = false;
+    player.invincibleTimer = 0;
+    player.dashAvailable = true;
+    player.dashCooldown = 0;
+    player.wallSliding = false;
+
+    // Reset camera
+    camera.x = 0;
+    camera.y = 0;
+
+    // Reset level data
+    loadLevel(currentLevel);
+}
+
+function loadLevel(levelNum) {
+    if (levelNum < 1 || levelNum > levels.length) {
+        console.error('Invalid level number:', levelNum);
+        return;
+    }
+
+    currentLevel = levelNum;
+    const levelData = levels[currentLevel - 1];
+
+    if (!levelData) {
+        console.error('Level data not found for level:', levelNum);
+        return;
+    }
+
+    platforms = levelData.platforms;
+    coinsArray = levelData.coins;
+    powerUps = levelData.powerUps;
+    enemies = levelData.enemies;
+    goal = levelData.goal;
+
+    // Reset collectibles
+    coinsArray.forEach(coin => coin.collected = false);
+    powerUps.forEach(powerUp => powerUp.collected = false);
+    enemies.forEach(enemy => {
+        enemy.alive = true;
+        enemy.health = 1;
+    });
+}
+
+function nextLevel() {
+    if (currentLevel < maxLevel) {
+        levelCompleted = true;
+        levelTransitionTimer = 60; // 1 second at 60fps
+        // Don't change gameState yet, let the transition play
+    } else {
+        gameState = 'won';
+    }
+}
+
+// Update game state
+function update() {
+    if (gameState !== 'playing') return;
+
+    updateParticles();
+
+    // Handle level transition
+    if (levelCompleted) {
+        levelTransitionTimer--;
+        if (levelTransitionTimer <= 0) {
+            currentLevel++;
+            loadLevel(currentLevel);
+            gameState = 'playing';
+            levelCompleted = false;
+            levelTransitionTimer = 0;
+
+            // Reset player position for new level
+            player.x = 50;
+            player.y = 500;
+            player.velocityX = 0;
+            player.velocityY = 0;
+            camera.x = 0;
+            player.invincible = false;
+            player.invincibleTimer = 0;
+            player.dashAvailable = true;
+            player.dashCooldown = 0;
+            player.wallSliding = false;
+        }
+        return; // Don't update game logic during transition
+    }
+
+    // Update timers
+    if (player.invincible) {
+        player.invincibleTimer--;
+        if (player.invincibleTimer <= 0) {
+            player.invincible = false;
+        }
+    }
+
+    if (powerUpActive) {
+        powerUpTimer--;
+        if (powerUpTimer <= 0) {
+            powerUpActive = false;
+        }
+    }
+
+    if (player.dashCooldown > 0) {
+        player.dashCooldown--;
+    }
+
+    // Wall detection
+    onWall = false;
+    wallSide = 0;
+
+    // Check for wall collision
+    for (let plat of platforms) {
+        if (player.x <= plat.x && player.x + player.width >= plat.x &&
+            player.y < plat.y + plat.height && player.y + player.height > plat.y) {
+            onWall = true;
+            wallSide = -1;
+            break;
+        }
+        if (player.x <= plat.x + plat.width && player.x + player.width >= plat.x + plat.width &&
+            player.y < plat.y + plat.height && player.y + player.height > plat.y) {
+            onWall = true;
+            wallSide = 1;
+            break;
+        }
+    }
+
+    // Horizontal movement
+    player.velocityX = 0;
+    if (keys['ArrowLeft']) player.velocityX = -player.speed;
+    if (keys['ArrowRight']) player.velocityX = player.speed;
+
+    // Wall sliding
+    if (onWall && !player.jumping && player.velocityY > 0) {
+        player.wallSliding = true;
+        player.velocityY = Math.min(player.velocityY, 2);
+    } else {
+        player.wallSliding = false;
+    }
+
+    // Jumping system - simplified with higher single jump
+    if (keyPressed[' ']) {
+        if (!player.jumping && !player.wallSliding) {
+            // Single jump - much higher now
+            player.velocityY = -player.jumpStrength;
+            player.jumping = true;
+            createParticle(player.x + player.width / 2, player.y + player.height, '#4A90E2', 'jump');
+        } else if (player.wallSliding) {
+            // Wall jump
+            player.velocityY = -player.jumpStrength * 0.7;
+            player.velocityX = wallSide * player.speed * 1.5;
+            player.wallSliding = false;
+            player.jumping = true;
+            createParticle(player.x + player.width / 2, player.y + player.height, '#FF6B35', 'wallJump');
+        }
+    }
+
+    // Dash ability
+    if (keyPressed['Shift'] && player.dashAvailable && player.dashCooldown <= 0) {
+        player.velocityX *= 3;
+        player.dashAvailable = false;
+        player.dashCooldown = 120; // 2 seconds
+        createParticle(player.x + player.width / 2, player.y + player.height / 2, '#FFD700', 'dash');
+    }
+
+    // Apply gravity
+    if (!player.wallSliding) {
+        player.velocityY += player.gravity;
+    }
+
+    // Update position
+    player.y += player.velocityY;
+    player.x += player.velocityX;
+
+    // Player can't go left of 0
+    if (player.x < 0) player.x = 0;
+
+    // Don't go beyond world right
+    if (player.x + player.width > worldWidth) player.x = worldWidth - player.width;
+
+    // Scroll camera
+    if (player.x < camera.x + 200) {
+        camera.x = player.x - 200;
+    }
+    if (camera.x < 0) camera.x = 0;
+    if (player.x > camera.x + canvas.width - 200) {
+        camera.x = player.x - (canvas.width - 200);
+    }
+    if (camera.x > worldWidth - canvas.width) {
+        camera.x = worldWidth - canvas.width;
+    }
+
+    // Check coin collisions
+    coinsArray.forEach(coin => {
+        if (!coin.collected &&
+            player.x < coin.x + coin.width &&
+            player.x + player.width > coin.x &&
+            player.y < coin.y + coin.height &&
+            player.y + player.height > coin.y) {
+            coin.collected = true;
+            coins++;
+            score += coin.value;
+            createParticle(coin.x + coin.width / 2, coin.y + coin.height / 2, '#FFD700', 'coin');
+        }
+    });
+
+    // Check power-up collisions
+    powerUps.forEach(powerUp => {
+        if (!powerUp.collected &&
+            player.x < powerUp.x + powerUp.width &&
+            player.x + player.width > powerUp.x &&
+            player.y < powerUp.y + powerUp.height &&
+            player.y + player.height > powerUp.y) {
+            powerUp.collected = true;
+            if (powerUp.type === 'doubleJump') {
+                // doubleJumpAvailable = true; // This line is removed
+                createParticle(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2, '#FFD700', 'powerUp');
+            } else if (powerUp.type === 'speedBoost') {
+                powerUpActive = true;
+                powerUpTimer = 300; // 5 seconds
+                player.speed = 8;
+                createParticle(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2, '#FF6B35', 'powerUp');
+            }
+        }
+    });
+
+    // Reset speed boost
+    if (!powerUpActive && player.speed > 6) {
+        player.speed = 6;
+    }
+
+    // Update enemies with improved AI
+    for (let enemy of enemies) {
+        if (enemy.alive) {
+            if (enemy.type === 'ground') {
+                enemy.x += enemy.velocityX;
+                if (enemy.x <= enemy.platformStart || enemy.x >= enemy.platformEnd - enemy.width) {
+                    enemy.velocityX *= -1;
+                }
+            } else if (enemy.type === 'flying') {
+                enemy.y += enemy.velocityY;
+                if (enemy.y <= enemy.startY || enemy.y >= enemy.endY) enemy.velocityY *= -1;
+            }
+
+            // Collision with player
+            if (!player.invincible &&
+                player.x < enemy.x + enemy.width &&
+                player.x + player.width > enemy.x &&
+                player.y < enemy.y + enemy.height &&
+                player.y + player.height > enemy.y) {
+                if (player.velocityY > 0 && player.y + player.height - player.velocityY <= enemy.y) {
+                    // Jumped on top
+                    enemy.health--;
+                    if (enemy.health <= 0) {
+                        enemy.alive = false;
+                        createParticle(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy.color, 'explosion');
+                    }
+                    score += 100;
+                    player.velocityY = -player.jumpStrength / 2;
+                } else {
+                    // Touched from side/bottom
+                    lives--;
+                    if (lives <= 0) {
+                        gameState = 'gameOver';
+                    } else {
+                        player.x = 50;
+                        player.y = 500;
+                        player.velocityX = 0;
+                        player.velocityY = 0;
+                        camera.x = 0;
+                        player.invincible = true;
+                        player.invincibleTimer = 120;
+                        createParticle(player.x + player.width / 2, player.y + player.height / 2, '#FF4444', 'hit');
+                    }
+                }
+            }
+        }
+    }
+
+    // Check collision with goal - improved
+    if (!levelCompleted &&
+        player.x < goal.x + goal.width &&
+        player.x + player.width > goal.x &&
+        player.y < goal.y + goal.height &&
+        player.y + player.height > goal.y) {
+        score += 500;
+        createParticle(goal.x + goal.width / 2, goal.y + goal.height / 2, '#FFD700', 'goal');
+        nextLevel();
+    }
+
+    // Check collisions with platforms
+    player.jumping = true;
+    for (let plat of platforms) {
+        if (player.x < plat.x + plat.width &&
+            player.x + player.width > plat.x &&
+            player.y + player.height <= plat.y + player.velocityY &&
+            player.y + player.height >= plat.y) {
+            if (player.velocityY > 0) {
+                player.y = plat.y - player.height;
+                player.velocityY = 0;
+                player.jumping = false;
+            }
+        }
+    }
+
+    // Ground collision
+    if (player.y + player.height > canvas.height) {
+        player.y = canvas.height - player.height;
+        player.velocityY = 0;
+        player.jumping = false;
+    }
+}
+
+// Draw everything
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (gameState === 'menu') {
+        drawMenu();
+        return;
+    }
+
+    // Draw sky gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, '#87CEEB');
+    gradient.addColorStop(1, '#E0F6FF');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw parallax clouds
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    for (let i = 0; i < 5; i++) {
+        const cloudX = (i * 300 - camera.x * 0.2) % (canvas.width + 100);
+        ctx.beginPath();
+        ctx.arc(cloudX, 80 + i * 20, 30, 0, Math.PI * 2);
+        ctx.arc(cloudX + 25, 80 + i * 20, 25, 0, Math.PI * 2);
+        ctx.arc(cloudX + 50, 80 + i * 20, 20, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Draw parallax hills
+    ctx.fillStyle = '#90EE90';
+    for (let i = 0; i < 3; i++) {
+        const hillX = (i * 400 - camera.x * 0.5) % (canvas.width + 200);
+        ctx.beginPath();
+        ctx.moveTo(hillX, canvas.height);
+        ctx.quadraticCurveTo(hillX + 100, canvas.height - 100, hillX + 200, canvas.height);
+        ctx.fill();
+    }
+
+    // Draw platforms
+    for (let plat of platforms) {
+        ctx.fillStyle = plat.color;
+        ctx.fillRect(plat.x - camera.x, plat.y, plat.width, plat.height);
+
+        // Add platform shading
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.fillRect(plat.x - camera.x, plat.y, plat.width, 5);
+    }
+
+    // Draw coins with animation
+    coinsArray.forEach(coin => {
+        if (!coin.collected) {
+            const time = Date.now() * 0.005;
+            const bounce = Math.sin(time) * 3;
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            ctx.arc(coin.x - camera.x + coin.width / 2, coin.y + coin.height / 2 + bounce, coin.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#FFA500';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Add sparkle effect
+            if (Math.random() < 0.1) {
+                ctx.fillStyle = '#FFF';
+                ctx.fillRect(coin.x - camera.x + Math.random() * coin.width, coin.y + Math.random() * coin.height, 2, 2);
+            }
+        }
+    });
+
+    // Draw power-ups
+    powerUps.forEach(powerUp => {
+        if (!powerUp.collected) {
+            const time = Date.now() * 0.01;
+            const pulse = Math.sin(time) * 0.3 + 0.7;
+
+            if (powerUp.type === 'doubleJump') {
+                ctx.fillStyle = `rgba(255, 215, 0, ${pulse})`;
+            } else if (powerUp.type === 'speedBoost') {
+                ctx.fillStyle = `rgba(255, 107, 53, ${pulse})`;
+            }
+
+            ctx.fillRect(powerUp.x - camera.x, powerUp.y, powerUp.width, powerUp.height);
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(powerUp.x - camera.x, powerUp.y, powerUp.width, powerUp.height);
+        }
+    });
+
+    // Draw enemies
+    for (let enemy of enemies) {
+        if (enemy.alive) {
+            ctx.fillStyle = enemy.color;
+            if (enemy.type === 'ground') {
+                ctx.fillRect(enemy.x - camera.x, enemy.y, enemy.width, enemy.height);
+                // Add enemy eyes
+                ctx.fillStyle = '#FFF';
+                ctx.fillRect(enemy.x - camera.x + 8, enemy.y + 8, 6, 6);
+                ctx.fillRect(enemy.x - camera.x + 26, enemy.y + 8, 6, 6);
+                ctx.fillStyle = '#000';
+                ctx.fillRect(enemy.x - camera.x + 10, enemy.y + 10, 2, 2);
+                ctx.fillRect(enemy.x - camera.x + 28, enemy.y + 10, 2, 2);
+            } else if (enemy.type === 'flying') {
+                ctx.fillRect(enemy.x - camera.x, enemy.y, enemy.width, enemy.height);
+                // Add wings
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.fillRect(enemy.x - camera.x - 5, enemy.y + 5, 8, 15);
+                ctx.fillRect(enemy.x - camera.x + enemy.width - 3, enemy.y + 5, 8, 15);
+            }
+        }
+    }
+
+    // Draw goal with animation
+    const goalTime = Date.now() * 0.003;
+    const goalPulse = Math.sin(goalTime) * 0.2 + 0.8;
+    ctx.fillStyle = `rgba(255, 215, 0, ${goalPulse})`;
+    ctx.fillRect(goal.x - camera.x, goal.y, goal.width, goal.height);
+
+    // Add sparkle effect to goal
+    ctx.strokeStyle = '#FFF';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(goal.x - camera.x, goal.y, goal.width, goal.height);
+
+    // Add rotating star effect
+    ctx.save();
+    ctx.translate(goal.x - camera.x + goal.width / 2, goal.y + goal.height / 2);
+    ctx.rotate(goalTime);
+    ctx.fillStyle = '#FFF';
+    for (let i = 0; i < 5; i++) {
+        ctx.fillRect(-1, -15, 2, 30);
+        ctx.rotate(Math.PI * 2 / 5);
+    }
+    ctx.restore();
+
+    // Draw particles
+    drawParticles();
+
+    // Draw player with enhanced effects
+    if (!player.invincible || Math.floor(Date.now() / 100) % 2) {
+        let playerColor = player.color;
+        if (powerUpActive) playerColor = '#FFD700';
+        if (player.wallSliding) playerColor = '#FF6B35';
+
+        ctx.fillStyle = playerColor;
+        ctx.fillRect(player.x - camera.x, player.y, player.width, player.height);
+
+        // Add player details
+        ctx.fillStyle = '#FFF';
+        ctx.fillRect(player.x - camera.x + 10, player.y + 10, 8, 8);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(player.x - camera.x + 12, player.y + 12, 4, 4);
+
+        // Add player outline
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(player.x - camera.x, player.y, player.width, player.height);
+
+        // Wall slide effect
+        if (player.wallSliding) {
+            ctx.fillStyle = 'rgba(255, 107, 53, 0.3)';
+            ctx.fillRect(player.x - camera.x, player.y, player.width, player.height);
+        }
+    }
+
+    // Draw UI
+    drawUI();
+}
+
+function drawMenu() {
+    // Background
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, '#4A90E2');
+    gradient.addColorStop(1, '#87CEEB');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Title
+    ctx.fillStyle = '#FF6B35';
+    ctx.font = 'bold 64px Arial';
+    ctx.fillText('SUPER MARCOS', canvas.width / 2 - 250, canvas.height / 2 - 100);
+
+    // Subtitle
+    ctx.fillStyle = '#FFF';
+    ctx.font = '24px Arial';
+    ctx.fillText('The Ultimate Platformer Adventure', canvas.width / 2 - 180, canvas.height / 2 - 50);
+
+    // Menu options
+    ctx.font = 'bold 32px Arial';
+    ctx.fillText('Press ENTER to Start', canvas.width / 2 - 150, canvas.height / 2 + 50);
+
+    ctx.font = '20px Arial';
+    ctx.fillText('Controls: Arrow Keys (Move) | Spacebar (Jump) | Shift (Dash)', canvas.width / 2 - 200, canvas.height / 2 + 100);
+    ctx.fillText('P: Pause | R: Restart | ESC: Menu', canvas.width / 2 - 150, canvas.height / 2 + 130);
+
+    // Animated elements
+    const time = Date.now() * 0.001;
+    for (let i = 0; i < 5; i++) {
+        const x = (i * 150 + time * 50) % (canvas.width + 100);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.fillRect(x, canvas.height - 50, 100, 20);
+    }
+}
+
+function drawUI() {
+    // Draw score and lives
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 20px Arial';
+    ctx.fillText(`Level: ${currentLevel}`, 10, 30);
+    ctx.fillText(`Score: ${score}`, 10, 60);
+    ctx.fillText(`Lives: ${lives}`, 10, 90);
+    ctx.fillText(`Coins: ${coins}`, 10, 120);
+
+    // Draw lives as hearts
+    ctx.fillStyle = '#FF4444';
+    for (let i = 0; i < lives; i++) {
+        ctx.fillText('♥', 80 + i * 25, 90);
+    }
+
+    // Draw power-up status
+    if (powerUpActive) {
+        ctx.fillStyle = '#FF6B35';
+        ctx.fillText('SPEED BOOST!', canvas.width - 150, 30);
+    }
+
+    // Draw level completion message
+    if (levelCompleted) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#4CAF50';
+        ctx.font = 'bold 48px Arial';
+        ctx.fillText('LEVEL COMPLETE!', canvas.width / 2 - 200, canvas.height / 2);
+        ctx.fillStyle = '#FFF';
+        ctx.font = '20px Arial';
+        ctx.fillText(`Level ${currentLevel} Score: ${score}`, canvas.width / 2 - 100, canvas.height / 2 + 40);
+        ctx.fillText('Loading next level...', canvas.width / 2 - 100, canvas.height / 2 + 70);
+    }
+
+    // Draw game state messages
+    if (gameState === 'paused') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 48px Arial';
+        ctx.fillText('PAUSED', canvas.width / 2 - 120, canvas.height / 2);
+        ctx.font = '20px Arial';
+        ctx.fillText('Press P to resume', canvas.width / 2 - 100, canvas.height / 2 + 40);
+    }
+
+    if (gameState === 'gameOver') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#FF4444';
+        ctx.font = 'bold 48px Arial';
+        ctx.fillText('GAME OVER', canvas.width / 2 - 150, canvas.height / 2);
+        ctx.fillStyle = '#FFF';
+        ctx.font = '20px Arial';
+        ctx.fillText(`Final Score: ${score}`, canvas.width / 2 - 80, canvas.height / 2 + 40);
+        ctx.fillText('Press R to restart', canvas.width / 2 - 80, canvas.height / 2 + 70);
+    }
+
+    if (gameState === 'won') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#4CAF50';
+        ctx.font = 'bold 48px Arial';
+        ctx.fillText('CONGRATULATIONS!', canvas.width / 2 - 250, canvas.height / 2);
+        ctx.fillStyle = '#FFF';
+        ctx.font = '20px Arial';
+        ctx.fillText(`Final Score: ${score}`, canvas.width / 2 - 80, canvas.height / 2 + 40);
+        ctx.fillText(`Coins Collected: ${coins}`, canvas.width / 2 - 80, canvas.height / 2 + 70);
+        ctx.fillText('You completed all levels!', canvas.width / 2 - 100, canvas.height / 2 + 100);
+        ctx.fillText('Press R to restart', canvas.width / 2 - 80, canvas.height / 2 + 130);
+    }
+}
+
+// Game loop
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop(); 
