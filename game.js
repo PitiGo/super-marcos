@@ -1,6 +1,8 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+
+
 // Game state
 let gameState = 'menu'; // 'menu', 'playing', 'paused', 'gameOver', 'won', 'levelSelect'
 let currentLevel = 1;
@@ -15,6 +17,11 @@ let onWall = false;
 let wallSide = 0; // -1 for left, 1 for right
 let levelCompleted = false;
 let levelTransitionTimer = 0;
+
+// Shooting system
+let lasers = [];
+const LASER_COOLDOWN_TIME = 20; // Frames between shots
+let laserCooldown = 0;
 
 // Particle system
 let particles = [];
@@ -36,7 +43,8 @@ let player = {
     invincibleTimer: 0,
     dashAvailable: true,
     dashCooldown: 0,
-    wallSliding: false
+    wallSliding: false,
+    lastDirection: 1 // 1 for right, -1 for left
 };
 
 // Camera and world properties
@@ -48,7 +56,7 @@ let worldHeight = 600;
 let levels = [
     {
         platforms: [
-            { x: 0, y: 550, width: 4000, height: 50, color: '#8B4513' },
+            { x: 0, y: 550, width: 150, height: 20, color: '#A0522D' },
             { x: 200, y: 400, width: 200, height: 20, color: '#A0522D' },
             { x: 500, y: 300, width: 150, height: 20, color: '#A0522D' },
             { x: 800, y: 450, width: 200, height: 20, color: '#A0522D' },
@@ -57,7 +65,7 @@ let levels = [
             { x: 1700, y: 400, width: 250, height: 20, color: '#A0522D' },
             { x: 2100, y: 300, width: 150, height: 20, color: '#A0522D' },
             { x: 2500, y: 450, width: 200, height: 20, color: '#A0522D' },
-            { x: 2800, y: 200, width: 300, height: 20, color: '#A0522D' },
+            { x: 2800, y: 280, width: 300, height: 20, color: '#A0522D' },
             { x: 3200, y: 350, width: 200, height: 20, color: '#A0522D' },
             { x: 3600, y: 250, width: 200, height: 20, color: '#A0522D' }
         ],
@@ -111,7 +119,7 @@ let levels = [
     // Level 2 - Different layout
     {
         platforms: [
-            { x: 0, y: 550, width: 4000, height: 50, color: '#8B4513' },
+            { x: 0, y: 550, width: 150, height: 20, color: '#A0522D' },
             { x: 150, y: 450, width: 150, height: 20, color: '#A0522D' },
             { x: 400, y: 350, width: 200, height: 20, color: '#A0522D' },
             { x: 700, y: 250, width: 180, height: 20, color: '#A0522D' },
@@ -120,7 +128,7 @@ let levels = [
             { x: 1600, y: 200, width: 150, height: 20, color: '#A0522D' },
             { x: 1900, y: 350, width: 200, height: 20, color: '#A0522D' },
             { x: 2200, y: 450, width: 180, height: 20, color: '#A0522D' },
-            { x: 2500, y: 150, width: 200, height: 20, color: '#A0522D' },
+            { x: 2500, y: 250, width: 200, height: 20, color: '#A0522D' },
             { x: 2800, y: 300, width: 150, height: 20, color: '#A0522D' },
             { x: 3100, y: 400, width: 200, height: 20, color: '#A0522D' },
             { x: 3400, y: 250, width: 180, height: 20, color: '#A0522D' },
@@ -176,7 +184,7 @@ let levels = [
     // Level 3 - Final level
     {
         platforms: [
-            { x: 0, y: 550, width: 4000, height: 50, color: '#8B4513' },
+            { x: 0, y: 550, width: 150, height: 20, color: '#A0522D' },
             { x: 100, y: 400, width: 100, height: 20, color: '#A0522D' },
             { x: 300, y: 300, width: 150, height: 20, color: '#A0522D' },
             { x: 550, y: 200, width: 120, height: 20, color: '#A0522D' },
@@ -263,6 +271,25 @@ window.addEventListener('keydown', (e) => {
         keyPressed[e.key] = true; // Mark as newly pressed
     }
     keys[e.key] = true;
+
+    // Shooting logic with SPACEBAR
+    if (e.key === ' ') {
+        if (laserCooldown <= 0) {
+            // Create a new laser
+            lasers.push({
+                x: player.x + (player.lastDirection === 1 ? player.width : -10),
+                y: player.y + player.height / 2 - 2.5,
+                width: 15,
+                height: 5,
+                color: '#FF00FF',
+                velocityX: 15 * player.lastDirection
+            });
+            // Reset cooldown
+            laserCooldown = LASER_COOLDOWN_TIME;
+
+        }
+    }
+
     if (e.key === 'p' || e.key === 'P') {
         if (gameState === 'playing') gameState = 'paused';
         else if (gameState === 'paused') gameState = 'playing';
@@ -335,6 +362,8 @@ function resetGame() {
     wallJumpAvailable = false;
     onWall = false;
     particles = [];
+    lasers = [];
+    laserCooldown = 0;
 
     // Reset player
     player.x = 50;
@@ -346,6 +375,8 @@ function resetGame() {
     player.dashAvailable = true;
     player.dashCooldown = 0;
     player.wallSliding = false;
+    player.lastDirection = 1;
+
 
     // Reset camera
     camera.x = 0;
@@ -421,6 +452,10 @@ function update() {
             player.dashAvailable = true;
             player.dashCooldown = 0;
             player.wallSliding = false;
+            player.lastDirection = 1;
+
+            lasers = [];
+            laserCooldown = 0;
         }
         return; // Don't update game logic during transition
     }
@@ -442,6 +477,11 @@ function update() {
 
     if (player.dashCooldown > 0) {
         player.dashCooldown--;
+    }
+
+        // Update laser cooldown
+    if (laserCooldown > 0) {
+        laserCooldown--;
     }
 
     // Wall detection
@@ -466,8 +506,14 @@ function update() {
 
     // Horizontal movement
     player.velocityX = 0;
-    if (keys['ArrowLeft']) player.velocityX = -player.speed;
-    if (keys['ArrowRight']) player.velocityX = player.speed;
+    if (keys['ArrowLeft']) {
+        player.velocityX = -player.speed;
+        player.lastDirection = -1;
+    }
+    if (keys['ArrowRight']) {
+        player.velocityX = player.speed;
+        player.lastDirection = 1;
+    }
 
     // Wall sliding
     if (onWall && !player.jumping && player.velocityY > 0) {
@@ -478,7 +524,7 @@ function update() {
     }
 
     // Jumping system - simplified with higher single jump
-    if (keyPressed[' ']) {
+    if (keyPressed['ArrowUp']) {
         if (!player.jumping && !player.wallSliding) {
             // Single jump - much higher now
             player.velocityY = -player.jumpStrength;
@@ -568,6 +614,38 @@ function update() {
         player.speed = 6;
     }
 
+    // Update lasers
+    for (let i = lasers.length - 1; i >= 0; i--) {
+        let laser = lasers[i];
+        laser.x += laser.velocityX;
+
+        // Remove lasers that go off screen
+        if (laser.x < camera.x - 50 || laser.x > camera.x + canvas.width + 50) {
+            lasers.splice(i, 1);
+            continue;
+        }
+
+        // Check laser collision with enemies
+        for (let enemy of enemies) {
+            if (enemy.alive &&
+                laser.x < enemy.x + enemy.width &&
+                laser.x + laser.width > enemy.x &&
+                laser.y < enemy.y + enemy.height &&
+                laser.y + laser.height > enemy.y) {
+                // Laser hit enemy
+                enemy.health--;
+                if (enemy.health <= 0) {
+                    enemy.alive = false;
+                    createParticle(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy.color, 'explosion');
+                }
+                score += 100;
+                createParticle(laser.x + laser.width / 2, laser.y + laser.height / 2, '#FF00FF', 'laserHit');
+                lasers.splice(i, 1);
+                break;
+            }
+        }
+    }
+
     // Update enemies with improved AI
     for (let enemy of enemies) {
         if (enemy.alive) {
@@ -642,11 +720,24 @@ function update() {
         }
     }
 
-    // Ground collision
-    if (player.y + player.height > canvas.height) {
-        player.y = canvas.height - player.height;
-        player.velocityY = 0;
-        player.jumping = false;
+    // Comprobar si el jugador se cae de la pantalla
+    if (player.y > canvas.height) { // Si el jugador está completamente fuera por abajo
+        lives--; // Restamos una vida
+        createParticle(player.x + player.width / 2, player.y, '#FF4444', 'hit'); // Efecto visual
+
+        if (lives <= 0) {
+            // Si no quedan vidas, termina el juego
+            gameState = 'gameOver';
+        } else {
+            // Si aún quedan vidas, reinicia la posición del jugador
+            player.x = 50;
+            player.y = 500; // Posición inicial segura
+            player.velocityX = 0;
+            player.velocityY = 0;
+            camera.x = 0; // Reinicia la cámara también
+            player.invincible = true;
+            player.invincibleTimer = 120; // 2 segundos de invencibilidad para no morir al instante
+        }
     }
 }
 
@@ -782,10 +873,22 @@ function draw() {
     }
     ctx.restore();
 
+    // Draw lasers
+    for (let laser of lasers) {
+        ctx.fillStyle = laser.color;
+        ctx.fillRect(laser.x - camera.x, laser.y, laser.width, laser.height);
+
+        // Add laser glow effect
+        ctx.shadowColor = laser.color;
+        ctx.shadowBlur = 10;
+        ctx.fillRect(laser.x - camera.x, laser.y, laser.width, laser.height);
+        ctx.shadowBlur = 0;
+    }
+
     // Draw particles
     drawParticles();
 
-    // Draw player with enhanced effects
+        // Draw player with enhanced effects
     if (!player.invincible || Math.floor(Date.now() / 100) % 2) {
         let playerColor = player.color;
         if (powerUpActive) playerColor = '#FFD700';
